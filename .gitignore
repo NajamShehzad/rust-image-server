@@ -1,0 +1,9 @@
+# Ignore compiled binaries
+/target/
+
+# Ignore IDE files
+.vscode/
+.idea/
+
+# Ignore build artifacts
+Cargo.lock
