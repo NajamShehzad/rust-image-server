@@ -30,10 +30,7 @@ async fn get_image_base64_from_url(url: &str) -> Result<serde_json::Value, Box<d
     if resp.status().is_success() {
         let bytes = resp.bytes().await?;
         let cursor = Cursor::new(bytes.clone()); // Clone the bytes for potential Base64 encoding
-        let img_reader = ImageReader::new(cursor);
-        let image_format = img_reader.format();
-        println!("Image format determined as {:?}", image_format);
-     // Defaulting to Jpeg if format is unknown
+        let img_reader = ImageReader::new(cursor.clone()).with_guessed_format()?;
         if let Some(format) = img_reader.format() {
             println!("Image format determined as {:?}", format);
             let image = img_reader.decode()?;
