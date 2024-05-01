@@ -26,31 +26,56 @@ async fn get_image_base64_from_url(url: &str) -> Result<serde_json::Value, Box<d
     let client = Client::new();
     println!("Downloading image from: {}", url);
     let resp = client.get(url).send().await?;
-    
+
     if resp.status().is_success() {
-        println!("Image downloaded successfully");
         let bytes = resp.bytes().await?;
         let cursor = Cursor::new(bytes.clone()); // Clone the bytes for potential Base64 encoding
-        print!("Cursor created");
         let img_reader = ImageReader::new(cursor);
-        print!("Image reader created");
-        let image_format = img_reader.format().unwrap_or(ImageFormat::Jpeg); // Defaulting to Jpeg if format is unknown
-        print!("Image format determined");
-        let image = img_reader.decode()?;
-        println!("Image format: {:?}", image_format);
-        if image_format == ImageFormat::Jpeg {
-            let base64 = encode(&bytes); // Use the cloned bytes
-            return Ok(serde_json::json!({"success": true, "base64": base64, "imageType": "jpeg"}));
+        let image_format = img_reader.format();
+        println!("Image format determined as {:?}", image_format);
+     // Defaulting to Jpeg if format is unknown
+        if let Some(format) = img_reader.format() {
+            println!("Image format determined as {:?}", format);
+            let image = img_reader.decode()?;
+            match format {
+                ImageFormat::Jpeg => {
+                    // If the image is already JPEG, directly encode to Base64
+                    let base64 = encode(&bytes); // Use the cloned bytes
+                    println!("Encoding JPEG image to base64");
+                    Ok(serde_json::json!({"success": true, "base64": base64, "imageType": "jpeg"}))
+                },
+                _ => {
+                    // For non-JPEG images, convert to JPEG before encoding
+                    let mut buffer = Cursor::new(Vec::new());
+                    image.write_to(&mut buffer, ImageOutputFormat::Jpeg(80))?;
+                    let base64 = encode(buffer.get_ref());
+                    println!("Converted image to JPEG and encoded to base64");
+                    Ok(serde_json::json!({"success": true, "base64": base64, "imageType": "jpeg"}))
+                }
+            }
         } else {
-            let mut buffer = Cursor::new(Vec::new());
-            image.write_to(&mut buffer, ImageOutputFormat::Jpeg(80))?;
-            let base64 = encode(buffer.get_ref());
-            return Ok(serde_json::json!({"success": true, "base64": base64, "imageType": "jpeg"}));
+            println!("Could not determine the image format, attempting to decode as JPEG");
+            // Try to force decode as JPEG if the format couldn't be determined
+            let cursor = Cursor::new(bytes);
+            match ImageReader::with_format(cursor, ImageFormat::Jpeg).decode() {
+                Ok(image) => {
+                    let mut buffer = Cursor::new(Vec::new());
+                    println!("Forced JPEG decoding and encoded to base64");
+                    image.write_to(&mut buffer, ImageOutputFormat::Jpeg(80))?;
+                    let base64 = encode(buffer.get_ref());
+                    Ok(serde_json::json!({"success": true, "base64": base64, "imageType": "jpeg"}))
+                },
+                Err(e) => {
+                    println!("Failed to force decode image: {}", e);
+                    Err(e.into())
+                }
+            }
         }
+    } else {
+        Err("Failed to download image or image is not available".into())
     }
-
-    Err("Failed to process image".into())
 }
+
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
